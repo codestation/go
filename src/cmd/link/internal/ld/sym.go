@@ -79,6 +79,7 @@ func (ctxt *Link) computeTLSOffset() {
 		objabi.Hnetbsd,
 		objabi.Hopenbsd,
 		objabi.Hdragonfly,
+		objabi.Hvita,
 		objabi.Hsolaris:
 		if objabi.GOOS == "android" {
 			switch ctxt.Arch.Family {

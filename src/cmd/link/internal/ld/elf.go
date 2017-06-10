@@ -526,6 +526,8 @@ func Elfinit(ctxt *Link) {
 				// ldelf.go reads that information and updates this field as
 				// appropriate.
 				ehdr.flags = 0x5000002 // has entry point, Version5 EABI
+			} else if Headtype == objabi.Hvita {
+				ehdr.flags = 0x5000400 // has entry point, Version5 EABI, hard-float ABI
 			}
 		} else if ctxt.Arch.Family == sys.MIPS {
 			ehdr.flags = 0x50001004 /* MIPS 32 CPIC O32*/

@@ -537,6 +537,7 @@ func (ctxt *Link) loadlib() {
 					libmsvcrt.a libm.a
 				*/
 			}
+			//TODO: find static libraries for vita
 		}
 	} else {
 		hostlinksetup(ctxt)
@@ -1100,6 +1101,8 @@ func (ctxt *Link) hostlink() {
 		} else {
 			argv = append(argv, "-mconsole")
 		}
+	case objabi.Hvita:
+		argv = append(argv, "-static", "-Wl,-q", "-Wl,-z,nocopyreloc")
 	}
 
 	switch ctxt.BuildMode {
@@ -1212,7 +1215,7 @@ func (ctxt *Link) hostlink() {
 	}
 
 	// Force global symbols to be exported for dlopen, etc.
-	if ctxt.IsELF {
+	if ctxt.IsELF && Headtype != objabi.Hvita {
 		argv = append(argv, "-rdynamic")
 	}
 

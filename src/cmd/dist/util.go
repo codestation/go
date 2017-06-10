@@ -393,6 +393,9 @@ func xgetgoarm() string {
 		// sense to auto-detect the setting.
 		return "7"
 	}
+	if goos == "vita" {
+		return "7"
+	}
 	if gohostarch != "arm" || goos != gohostos {
 		// Conservative default for cross-compilation.
 		return "5"

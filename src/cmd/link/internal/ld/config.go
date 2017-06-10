@@ -176,6 +176,8 @@ func mustLinkExternal(ctxt *Link) (res bool, reason string) {
 		if ctxt.Arch.InFamily(sys.ARM, sys.ARM64) {
 			return true, "iOS"
 		}
+	case "vita":
+		return true, "vita"
 	}
 
 	if *flagMsan {

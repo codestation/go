@@ -410,6 +410,11 @@ func Dup(fd int) (nfd int, err error) {
 	return
 }
 
+func Exit(code int) {
+	Syscall(uintptr(unsafe.Pointer(&libc_Exit)), 1, uintptr(code), 0, 0, 0, 0, 0)
+	return
+}
+
 func Fchdir(fd int) (err error) {
 	_, _, e1 := sysvicall6(uintptr(unsafe.Pointer(&libc_Fchdir)), 1, uintptr(fd), 0, 0, 0, 0, 0)
 	if e1 != 0 {

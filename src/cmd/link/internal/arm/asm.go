@@ -863,6 +863,7 @@ func asmb(ctxt *ld.Link) {
 		objabi.Hfreebsd,
 		objabi.Hnetbsd,
 		objabi.Hopenbsd,
+		objabi.Hvita,
 		objabi.Hnacl:
 		ld.Asmbelf(ctxt, int64(symo))
 

@@ -273,7 +273,7 @@ func dynimport(obj string) {
 		}
 		sym, err := f.ImportedSymbols()
 		if err != nil {
-			fatalf("cannot load imported symbols from ELF file %s: %v", obj, err)
+			fmt.Fprintf(os.Stderr,"cannot load imported symbols from ELF file %s: %v", obj, err)
 		}
 		for _, s := range sym {
 			targ := s.Name
@@ -284,7 +284,7 @@ func dynimport(obj string) {
 		}
 		lib, err := f.ImportedLibraries()
 		if err != nil {
-			fatalf("cannot load imported libraries from ELF file %s: %v", obj, err)
+			fmt.Fprintf(os.Stderr, "cannot load imported libraries from ELF file %s: %v", obj, err)
 		}
 		for _, l := range lib {
 			fmt.Fprintf(stdout, "//go:cgo_import_dynamic _ _ %q\n", l)

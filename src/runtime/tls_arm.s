@@ -23,6 +23,9 @@
 #ifdef GOOS_darwin
 #define TLSG_IS_VARIABLE
 #endif
+#ifdef GOOS_vita
+#define TLSG_IS_VARIABLE
+#endif
 
 // save_g saves the g register into pthread-provided
 // thread-local memory, so that we can call externally compiled
