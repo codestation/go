@@ -345,7 +345,7 @@ func getGoType(t clang.Type, isFunction bool) (string, error) {
 			if isFunction {
 				return "string", nil
 			} else {
-				return "*byte", nil
+				return "*Char", nil
 			}
 		case clang.Type_UChar:
 			return "*byte", nil
@@ -414,10 +414,10 @@ func getGoType(t clang.Type, isFunction bool) (string, error) {
 				if isFunction {
 					return "string", nil
 				} else {
-					return "*byte", nil
+					return "*Char", nil
 				}
 			} else {
-				return "*byte", nil
+				return "*Char", nil
 			}
 		case clang.Type_Unexposed:
 			return "uintptr", nil
