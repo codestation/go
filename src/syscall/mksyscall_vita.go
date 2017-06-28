@@ -11,11 +11,31 @@ import (
 )
 
 var reservedList = []string{
-	"break", "default", "func", "interface", "select",
-	"case", "defer", "go", "map", "struct",
-	"chan", "else", "goto", "package", "switch",
-	"const", "fallthrough", "if", "range", "type",
-	"continue", "for", "import", "return", "var",
+	"break",
+	"default",
+	"func",
+	"interface",
+	"select",
+	"case",
+	"defer",
+	"go",
+	"map",
+	"struct",
+	"chan",
+	"else",
+	"goto",
+	"package",
+	"switch",
+	"const",
+	"fallthrough",
+	"if",
+	"range",
+	"type",
+	"continue",
+	"for",
+	"import",
+	"return",
+	"var",
 }
 
 type funcArg struct {
@@ -45,21 +65,21 @@ type enumInfo struct {
 }
 
 type structEntry struct {
-	name string
+	name    string
 	argType clang.Type
 }
 
 type structInfo struct {
-	name string
+	name   string
 	fields []structEntry
-	union bool
+	union  bool
 	nested bool
 }
 
 type structArray []structInfo
 
 type typedefInfo struct {
-	name string
+	name    string
 	argType clang.Type
 }
 
@@ -80,16 +100,25 @@ func stringInSlice(s string, list []string) bool {
 	return false
 }
 
+func (t typedefInfo) hasScePrefix() bool {
+	return strings.HasPrefix(t.name, "Sce") ||
+		strings.HasPrefix(t.name, "_sce")
+}
+
+func validStructName(name string) bool {
+	return strings.HasPrefix(name, "Sce") ||
+		strings.HasPrefix(name, "_sce") ||
+		strings.HasPrefix(name, "MusicExportParam") ||
+		strings.HasPrefix(name, "PhotoExportParam") ||
+		strings.HasPrefix(name, "ScreenShotParam")
+}
+
 func cmd(args []string) int {
-	//fmt.Printf(":: go-clang-dump...\n")
 	if err := flag.CommandLine.Parse(args); err != nil {
 		fmt.Printf("ERROR: %s", err)
 
 		return 1
 	}
-
-	//fmt.Printf(":: fname: %s\n", *fname)
-	//fmt.Printf(":: args: %v\n", flag.Args())
 
 	if *fname == "" {
 		flag.Usage()
@@ -110,19 +139,12 @@ func cmd(args []string) int {
 	tu := idx.ParseTranslationUnit(*fname, tuArgs, nil, 0)
 	defer tu.Dispose()
 
-	//fmt.Printf("tu: %s\n", tu.Spelling())
-
 	diagnostics := tu.Diagnostics()
 	for _, d := range diagnostics {
-		fmt.Println("PROBLEM:", d.Spelling())
+		fmt.Fprintf(os.Stderr, "PROBLEM: %s", d.Spelling())
 	}
 
 	cursor := tu.TranslationUnitCursor()
-	//fmt.Printf("cursor-isnull: %v\n", cursor.IsNull())
-	//fmt.Printf("cursor: %s\n", cursor.Spelling())
-	//fmt.Printf("cursor-kind: %s\n", cursor.Kind().Spelling())
-
-	//fmt.Printf("tu-fname: %s\n", tu.File(*fname).Name())
 
 	var funcList []funcInfo
 	var enumList []enumInfo
@@ -142,33 +164,34 @@ func cmd(args []string) int {
 			return clang.ChildVisit_Continue
 		}
 
-		//fmt.Printf("%s: %s (%s)\n", cursor.Kind().Spelling(), cursor.Spelling(), cursor.TypedefDeclUnderlyingType().Kind())
+		//fmt.Printf("%s: %s (%s)\n", cursor.Kind().Spelling(), cursor.Spelling(), cursor.USR())
 
 		switch cursor.Kind() {
 		case clang.Cursor_TypedefDecl:
 			typeData.name = cursor.Spelling()
+			// get the underlying type
+			typeData.argType = cursor.TypedefDeclUnderlyingType()
 
-			switch cursor.TypedefDeclUnderlyingType().CanonicalType().Kind() {
+			// check if the typedef is from a struct or enum
+			switch typeData.argType.CanonicalType().Kind() {
 			case clang.Type_Record:
-				if structIndex >= 0 && structList[structIndex].name == "" {
+				if len(structList) > 0 && structList[structIndex].name == "" {
 					structList[structIndex].name = typeData.name
 				}
 			case clang.Type_Enum:
-				if enumIndex >= 0 && enumList[enumIndex].name == "" {
+				if len(enumList) > 0 && enumList[enumIndex].name == "" {
 					enumList[enumIndex].name = typeData.name
 				}
 			}
 
-			if strings.HasPrefix(typeData.name, "Sce") ||
-				strings.HasPrefix(typeData.name, "_sce") {
-
-				switch cursor.TypedefDeclUnderlyingType().Kind() {
+			if typeData.hasScePrefix() {
+				switch typeData.argType.Kind() {
 				case clang.Type_Unexposed:
-					switch cursor.TypedefDeclUnderlyingType().CanonicalType().Kind() {
+					switch typeData.argType.CanonicalType().Kind() {
 					case clang.Type_FunctionProto:
 						typedefList = append(typedefList, typedefInfo{
 							name:    typeData.name,
-							argType: cursor.TypedefDeclUnderlyingType().CanonicalType(),
+							argType: typeData.argType.CanonicalType(),
 						})
 					}
 				default:
@@ -178,44 +201,60 @@ func cmd(args []string) int {
 					})
 				}
 			}
-			return clang.ChildVisit_Continue
 		case clang.Cursor_EnumDecl:
-			enumList = append(enumList, enumInfo{name: cursor.Spelling()})
+			enumList = append(enumList, enumInfo{
+				name: cursor.Spelling(),
+			})
 			enumIndex++
+
+			// follow the enum
 			return clang.ChildVisit_Recurse
 		case clang.Cursor_EnumConstantDecl:
+			// add an entry to the current enum
 			enumList[enumIndex].entries = append(enumList[enumIndex].entries, enumEntry{
 				name:  cursor.Spelling(),
 				value: cursor.EnumConstantDeclUnsignedValue(),
 			})
 		case clang.Cursor_StructDecl:
+			// check if nested struct
 			if parent.Equal(cursorInfo) {
 				structList[structIndex].nested = true
 				return clang.ChildVisit_Continue
 			}
 			cursorInfo = cursor
 			structName := cursor.Spelling()
-			structList = append(structList, structInfo{name: structName})
+
+			structList = append(structList, structInfo{
+				name: structName,
+			})
 			structIndex++
+
+			// follow the struct
 			return clang.ChildVisit_Recurse
 		case clang.Cursor_UnionDecl:
-			structList = append(structList, structInfo{name: cursor.Spelling(), union: true})
+			// create union as struct
+			structList = append(structList, structInfo{
+				name: cursor.Spelling(),
+				// mark as union
+				union: true,
+			})
 			structIndex++
+
+			// follow the enum
 			return clang.ChildVisit_Recurse
 		case clang.Cursor_FieldDecl:
+			// add field to struct/union
 			structList[structIndex].fields = append(structList[structIndex].fields, structEntry{
-				name:  cursor.Spelling(),
+				name:    cursor.Spelling(),
 				argType: cursor.Type(),
 			})
 		case clang.Cursor_ClassDecl, clang.Cursor_Namespace:
+			// unused, C header only
 			return clang.ChildVisit_Recurse
 		case clang.Cursor_FunctionDecl:
 			funcName := cursor.Spelling()
-
 			returnType := cursor.ResultType()
-
-			argc := (int)(cursor.NumArguments())
-
+			argc := int(cursor.NumArguments())
 			argList := make([]funcArg, argc)
 
 			for i := range argList {
@@ -224,7 +263,13 @@ func cmd(args []string) int {
 				argList[i].argType = arg.Type()
 			}
 
-			f := funcInfo{name: funcName, args: argList, returnValue: returnType, variadic: cursor.IsVariadic()}
+			f := funcInfo{
+				name:        funcName,
+				args:        argList,
+				returnValue: returnType,
+				variadic:    cursor.IsVariadic(),
+			}
+
 			funcList = append(funcList, f)
 		}
 
@@ -232,7 +277,7 @@ func cmd(args []string) int {
 	})
 
 	if len(diagnostics) > 0 {
-		fmt.Println("NOTE: There were problems while analyzing the given file")
+		fmt.Fprintln(os.Stderr, "NOTE: There were problems while analyzing the given file")
 	}
 
 	fmt.Printf("package vita\n\n")
@@ -247,10 +292,11 @@ func cmd(args []string) int {
 	printVars(funcList)
 	fmt.Printf("\n\n")
 	printFuncs(funcList)
+
 	return 0
 }
 
-func GoType(t clang.Type) (string, error) {
+func getGoType(t clang.Type, isFunction bool) (string, error) {
 	switch t.Kind() {
 	case clang.Type_Bool:
 		return "bool", nil
@@ -296,18 +342,22 @@ func GoType(t clang.Type) (string, error) {
 		arrayType := t.ArrayElementType()
 		switch arrayType.Kind() {
 		case clang.Type_Char_S:
-			return "string", nil
+			if isFunction {
+				return "string", nil
+			} else {
+				return "*byte", nil
+			}
 		case clang.Type_UChar:
 			return "*byte", nil
 		case clang.Type_Pointer:
-			r, err := GoType(t.ArrayElementType())
+			r, err := getGoType(t.ArrayElementType(), isFunction)
 			if err != nil {
 				return "", err
 			}
 			return "*" + r, nil
 		case clang.Type_Typedef:
 			size := t.ArraySize()
-			r, err := GoType(arrayType.CanonicalType())
+			r, err := getGoType(arrayType.CanonicalType(), isFunction)
 			if err != nil {
 				return "", err
 			}
@@ -315,7 +365,7 @@ func GoType(t clang.Type) (string, error) {
 			return field, nil
 		default:
 			size := t.ArraySize()
-			r, err := GoType(arrayType.CanonicalType())
+			r, err := getGoType(arrayType.CanonicalType(), isFunction)
 			if err != nil {
 				return "", err
 			}
@@ -327,17 +377,17 @@ func GoType(t clang.Type) (string, error) {
 		arrayType := t.ArrayElementType()
 		switch arrayType.Kind() {
 		case clang.Type_Char_S:
-			return fmt.Sprintf("[%v]byte /* char[]*/", size), nil
+			return fmt.Sprintf("[%v]Char", size), nil
 		case clang.Type_UChar:
-			return fmt.Sprintf("[%v]byte /* byte[] */", size), nil
+			return fmt.Sprintf("[%v]byte", size), nil
 		case clang.Type_Pointer:
-			r, err := GoType(t.ArrayElementType())
+			r, err := getGoType(t.ArrayElementType(), isFunction)
 			if err != nil {
 				return "", err
 			}
 			return "*" + r, nil
 		case clang.Type_Typedef:
-			r, err := GoType(arrayType.CanonicalType())
+			r, err := getGoType(arrayType.CanonicalType(), isFunction)
 			if err != nil {
 				return "", err
 			}
@@ -345,7 +395,7 @@ func GoType(t clang.Type) (string, error) {
 			return field, nil
 		default:
 			size := t.ArraySize()
-			r, err := GoType(arrayType.CanonicalType())
+			r, err := getGoType(arrayType.CanonicalType(), isFunction)
 			if err != nil {
 				return "", err
 			}
@@ -361,7 +411,11 @@ func GoType(t clang.Type) (string, error) {
 			return "uintptr /* function */", nil
 		case clang.Type_Char_S:
 			if pointee.IsConstQualifiedType() {
-				return "string", nil
+				if isFunction {
+					return "string", nil
+				} else {
+					return "*byte", nil
+				}
 			} else {
 				return "*byte", nil
 			}
@@ -374,7 +428,7 @@ func GoType(t clang.Type) (string, error) {
 				return pointee.Spelling() + "_S", nil
 			}
 		case clang.Type_Typedef:
-			cr, err := GoType(pointee.CanonicalType())
+			cr, err := getGoType(pointee.CanonicalType(), isFunction)
 			if err != nil {
 				return "", err
 			}
@@ -382,7 +436,7 @@ func GoType(t clang.Type) (string, error) {
 			return fmt.Sprintf("*%s", cr), nil
 		}
 
-		r, err := GoType(pointee)
+		r, err := getGoType(pointee, isFunction)
 		if err != nil {
 			return "", err
 		}
@@ -397,12 +451,8 @@ func GoType(t clang.Type) (string, error) {
 			return t.Spelling() + "_E", nil
 		}
 
-		if !strings.HasPrefix(t.Spelling(), "Sce") &&
-			!strings.HasPrefix(t.Spelling(), "MusicExportParam") &&
-			!strings.HasPrefix(t.Spelling(), "PhotoExportParam") &&
-			!strings.HasPrefix(t.Spelling(), "ScreenShotParam") &&
-			!strings.HasPrefix(t.Spelling(), "_sce") {
-			return GoType(t.CanonicalType())
+		if !validStructName(t.Spelling()) {
+			return getGoType(t.CanonicalType(), isFunction)
 		}
 
 		return t.Spelling(), nil
@@ -423,22 +473,24 @@ func GoType(t clang.Type) (string, error) {
 	return "", errors.New(fmt.Sprintf("Unknown type: %v (%v)", t.Spelling(), t.Kind()))
 }
 
-func (t argArray) Parse(variadic bool) (string, error) {
+func (t argArray) parseArgs(variadic bool) (string, error) {
 	var result string
 	for i, e := range t {
 
 		var argName string
 		if e.argName == "" {
+			// no arg name, assign a generic one
 			argName = fmt.Sprintf("arg%v", i)
 		} else {
 			if stringInSlice(e.argName, reservedList) {
+				// if the name is reserved then append an underscore
 				argName = e.argName + "_"
 			} else {
 				argName = e.argName
 			}
 		}
 
-		r, err := GoType(e.argType)
+		r, err := getGoType(e.argType, true)
 		if err != nil {
 			return "", err
 		}
@@ -464,7 +516,8 @@ func (t argArray) Parse(variadic bool) (string, error) {
 	return result, nil
 }
 
-func goName(cname string) string {
+// first letter to uppercase, remove underscore
+func toExportableGoName(cname string) string {
 	if strings.HasPrefix(cname, "_") {
 		return strings.ToUpper(cname[1:2]) + cname[2:]
 	} else {
@@ -474,14 +527,11 @@ func goName(cname string) string {
 
 func printStructs(structs []structInfo) {
 	for _, entry := range structs {
-		if !strings.HasPrefix(entry.name, "Sce") &&
-			!strings.HasPrefix(entry.name, "_sce") &&
-			!strings.HasPrefix(entry.name, "MusicExportParam") &&
-			!strings.HasPrefix(entry.name, "ScreenShotParam") &&
-			!strings.HasPrefix(entry.name, "PhotoExportParam"){
+		if !validStructName(entry.name) {
 			continue
 		}
-		structName := goName(entry.name) + "_S"
+
+		structName := toExportableGoName(entry.name) + "_S"
 
 		if entry.union {
 			fmt.Println("/* union */")
@@ -496,11 +546,11 @@ func printStructs(structs []structInfo) {
 			}
 		}
 		for _, field := range entry.fields {
-			fieldName := goName(field.name)
+			fieldName := toExportableGoName(field.name)
 			if fieldName == "PInfo" {
 				fmt.Println("")
 			}
-			fieldType, err := GoType(field.argType)
+			fieldType, err := getGoType(field.argType, false)
 			if err != nil {
 				fmt.Print(err)
 				os.Exit(1)
@@ -521,7 +571,7 @@ func printCgo(funcs []funcInfo) {
 	fmt.Printf("\n")
 	for _, entry := range funcs {
 		if strings.HasPrefix(entry.name, "sce") || strings.HasPrefix(entry.name, "_sce") {
-			fmt.Printf("//go:linkname %s %s\n", goName(entry.name), entry.name)
+			fmt.Printf("//go:linkname %s %s\n", toExportableGoName(entry.name), entry.name)
 		}
 	}
 }
@@ -532,9 +582,9 @@ func printVars(funcs []funcInfo) {
 	for i, entry := range funcs {
 		if strings.HasPrefix(entry.name, "sce") || strings.HasPrefix(entry.name, "_sce") {
 			if i < len(funcs)-1 {
-				fmt.Printf("\t lib_%s,\n", goName(entry.name))
+				fmt.Printf("\t lib_%s,\n", toExportableGoName(entry.name))
 			} else {
-				fmt.Printf("\t lib_%s libFunc\n", goName(entry.name))
+				fmt.Printf("\t lib_%s libFunc\n", toExportableGoName(entry.name))
 			}
 		}
 	}
@@ -549,7 +599,7 @@ func printFuncs(funcs []funcInfo) {
 		if entry.returnValue.Kind() == clang.Type_Void {
 			returnStr = ""
 		} else {
-			r, err := GoType(entry.returnValue)
+			r, err := getGoType(entry.returnValue, true)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err.Error())
 				os.Exit(1)
@@ -559,8 +609,8 @@ func printFuncs(funcs []funcInfo) {
 
 		if strings.HasPrefix(entry.name, "sce") || strings.HasPrefix(entry.name, "_sce") {
 			total++
-			args, err := entry.args.Parse(entry.variadic)
-			funcName := goName(entry.name)
+			args, err := entry.args.parseArgs(entry.variadic)
+			funcName := toExportableGoName(entry.name)
 			if err != nil {
 				fmt.Printf("// func %s(interface{})%s\n", funcName, returnStr)
 			} else {
@@ -605,9 +655,10 @@ func printEnums(enums []enumInfo) {
 }
 
 func printTypedefs(defs []typedefInfo) {
+	fmt.Printf("type Char byte\n\n")
 	for _, e := range defs {
-		typeName := goName(e.name)
-		typeRef, err := GoType(e.argType)
+		typeName := toExportableGoName(e.name)
+		typeRef, err := getGoType(e.argType, false)
 		if err != nil {
 			fmt.Printf("// type %s %s\n", typeName, e.argType.Spelling())
 		} else {
